@@ -1,5 +1,5 @@
 ---
-title: "HIDS-6002 Week 3 Assignment"
+title: "Healthcare Data Analysis"
 date: "09/16/2023"
 author: "Youngmin Choi"
 format: 
@@ -12,17 +12,16 @@ editor:
 
 ```{r}
 #| warning: false
-library(tidyverse)     # loads the tidyverse tools
-library(RPostgres)     # loads the database driver for PostgreSQL
-library(connections)   # helps RPostgres work with RStudio
-library(keyring)       # access to a local encrypted keychain for passwords
+library(tidyverse)     
+library(RPostgres)    
+library(connections)   
+library(keyring)      
 
 con <- connection_open(RPostgres::Postgres(),
-          dbname = "syntheticMGUH",
-          host = "34.85.177.140",
-          user = "hids502_student",
-          password = key_get(service = "syntheticmguh", 
-                             username = "hids502_student"))
+          dbname = "",
+          host = "",
+          user = "",
+          password = 
 ```
 
 # Morbidity and Mortality
