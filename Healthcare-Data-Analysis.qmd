@@ -1,0 +1,275 @@
+---
+title: "HIDS-6002 Week 3 Assignment"
+date: "09/16/2023"
+author: "Youngmin Choi"
+format: 
+  html:
+    embed-resources: true
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+#| warning: false
+library(tidyverse)     # loads the tidyverse tools
+library(RPostgres)     # loads the database driver for PostgreSQL
+library(connections)   # helps RPostgres work with RStudio
+library(keyring)       # access to a local encrypted keychain for passwords
+
+con <- connection_open(RPostgres::Postgres(),
+          dbname = "syntheticMGUH",
+          host = "34.85.177.140",
+          user = "hids502_student",
+          password = key_get(service = "syntheticmguh", 
+                             username = "hids502_student"))
+```
+
+# Morbidity and Mortality
+
+### Question 1.
+
+#### What are the top 3 causes of morbidity (illness) and the top 3 causes of mortality (death) in the US?
+
+Top 3 health problems in America are;\
+i) heart disease,\
+ii) cancer, and. iii) stroke. (Raghupathi, 2018).
+
+In the meantime, top 3 highest number of death were;\
+i) heart disease\
+ii) cancer, and iii) COVID-19.
+(https://www.cdc.gov/nchs/fastats/deaths.htm).
+
+#### Question 1-1.
+
+#### In the Synthea data set, how would you estimate similar answers?
+
+##### Finding Top 3 Illnesses in Synthea Databse
+
+According to this finding, the top 3 illness in the Synthea database
+were; Viral sinusitis, acute viral pharyngitis, and acute bronchitis,
+respectively.
+
+```{sql connection=con}
+SELECT description, COUNT(description) AS cases
+FROM conditions
+WHERE description LIKE '%disorder%' /*in order to filter disorder from description*/ 
+GROUP BY description
+ORDER BY COUNT(description) DESC 
+LIMIT 3 /* to show only top 3 disorders*/
+
+```
+
+##### Finding Top 3 Causes of Deaths in Synthea Databse
+
+According to this finding, the top 3 cause of death in the Synthea
+database were; end-stage renal disease, chronic congestive heart
+failure, and acute myocardial infarction.
+
+```{sql connection=con}
+SELECT value, COUNT(value) AS cases
+FROM observations
+WHERE code='69453-9'
+GROUP BY value /* to enable aggregate function (COUNT) */
+ORDER BY COUNT(value) DESC /* to show highest number of cases on top*/ 
+LIMIT 3
+```
+
+# Insurance
+
+### Question 2.
+
+#### What is the breakdown of spending between Medicaid, Medicare and everything else in the US? Why do you think it might break down this way?
+
+1.  According to the National Health Expenditure Data from
+    [CMS.gov](https://www.cms.gov/data-research/statistics-trends-and-reports/national-health-expenditure-data/nhe-fact-sheet#:~:text=Medicare%20spending%20grew%208.4%25%20to,28%20percent%20of%20total%20NHE.),
+    the total healthcare spending in the US has been increasing. The
+    following table represents the result of this data, with the dollar
+    unit of billion US dollars.\
+2.  When focusing on the year 2021 alone, it can be seen that the growth
+    in Medicaid was higher than Medicare, which according to the
+    'National Health Expenditures 2021 Highlights report', was due to
+    the enrollment requirement of the Families First Coronavirus
+    Response Act of 2020.\
+3.  Another abnormal trend that can be observed is in year 2020, where
+    private health insurance spending actually decreased from the year
+    before. It could be because of the COVID-19 pandemic, and the drop
+    of employer-sponsored insurance.
+
+```{r}
+library("readxl")
+data<-read_excel("National Health Expenditures.xlsx", col_names = TRUE, skip=2 ) #Imported National Health Expenditures data in Excel form 
+
+
+sorted<-data[c(2,24,49,71,96,118,143,165),c(1:11)] # Selected rows showing the total amount
+
+year<-c('2014','2015','2016','2017','2018','2019','2020','2021')
+sorted_update<-cbind(sorted,year) # Added year as reference row
+answer<-sorted_update[,c(12,6,7,5,8,9)]
+cols_num<-c("Medicare","Medicaid","Private Health Insurance","Other Health Insurance Programs1", "Other Third Party Payers2")
+answer[cols_num]<-sapply(answer[cols_num], as.numeric) # Changed data type so that values have the same numeric data type. 
+answer
+
+```
+
+### Question 2-1.
+
+#### In the Synthea data set, how would you estimate similar answers?
+
+###### Following is the SQL query and sorted total cost acording to payer.
+
+```{sql connection=con}
+SELECT p.name, date_part('year', start) AS year, SUM(e.total_claim_cost) AS total_cost 
+FROM encounters AS E
+INNER JOIN
+payers AS p
+ON e.payer=p.id
+WHERE date_part('year', start)=2022
+GROUP BY year, p.name
+ORDER BY total_cost DESC
+
+```
+
+# Lack of Insurance
+
+### Question 3.
+
+#### What percent of Americans are estimated to be uninsured in the United States? How has this changed over the past 15 years, and why?
+
+Following is the uninsured population ratio (non-elderly) from year 2010
+to year 2020. ![Uninsured population ratio](uninsured.png) There was a
+substantial decrease in uninsured population ratio in year 2014, with
+the implementation of several provisions of Affordable Care Act,
+according to ASPE (Assistant Secretary for Planning and Evaluation)
+Issue Brief issued in February 11,2021.
+
+Following image is the uninsured population trend from year 1987 to year
+2010. When looking into the range from year 2005 to 2010, the uninsured
+rate has gradually increased.
+
+![uninsured_past](uninsured_past.png)
+
+#### Question 3-1.
+
+##### In the Synthea data set, how would you estimate similar answers?
+
+-   As per the following filtering process, the ratio of no-insurance
+    patient population from Synthea database was approximately 6%, with
+    slight decrease during the past years.
+
+```{sql connection=con}
+WITH yeardata AS /* table with year data */
+(
+SELECT pt.patient , date_part('year',pt.start_date) AS startdate, p.name
+FROM payer_transitions AS pt
+INNER JOIN
+payers AS p
+ON pt.payer=p.id
+),
+yearnoinsurance AS /*second table with "no_insurance" case included */
+(
+SELECT startdate, CAST(COUNT(patient) AS DECIMAL(10,2)) AS countall, CAST(COUNT(CASE WHEN name='NO_INSURANCE' THEN patient END) AS DECIMAL(10,2)) AS noinsurance 
+FROM yeardata
+GROUP BY startdate
+) /* table with overall patient & patient with no insurance*/
+
+SELECT startdate, noinsurance, countall, CAST(((noinsurance*100)/countall) AS DECIMAL(10,2)) AS ratio 
+FROM yearnoinsurance 
+ORDER BY startdate DESC
+LIMIT 15
+
+```
+
+# Surprise Billing
+
+### Question 4.
+
+##### What is meant by "surprise billing" in the US?
+
+-   A 'surprise medical bill' is an unexpected bill from an
+    out-of-network provider or an out-of-network facility. The patient
+    may not know at the time of service that was out-of-network, and
+    only be aware after the patient was billed. (reference:
+    [consumerfinance.gov](https://www.consumerfinance.gov/ask-cfpb/what-is-a-surprise-medical-bill-and-what-should-i-know-about-the-no-surprises-act-en-2123/))
+
+##### How would you find evidence of this in the Synthea data set? Show whether it exists or does not exist in Synthea.
+
+-   According to the following query, encounter 'start' column was used
+    as a reference to compare with payer_transitions start_date and
+    end_date. There were 638 rows, indicating that in 638 cases,
+    patients were categorized as no-insurance, when they actually had
+    insurance. However, when looking into details, the encounter start
+    date and time are identical to the payer_transitions end_date date
+    and time. In order to examine this unusual result, encounter 'stop'
+    date and time were referenced in the next SQL query for comparison.
+
+```{sql connection=con}
+WITH noinsurance AS
+(
+SELECT p.name, e.patient, e.start, e.payer
+FROM encounters AS e
+INNER JOIN
+payers AS p
+ON p.id=e.payer
+WHERE p.name='NO_INSURANCE'
+), /*filtered patients from encounters table where encounters used no-insurance*/
+combined AS 
+(
+SELECT i.name, i.patient, i.start, pt.start_date, pt.end_date, pt.payer
+FROM noinsurance AS i
+INNER JOIN
+payer_transitions AS pt
+ON i.patient=pt.patient
+WHERE i.start BETWEEN pt.start_date AND pt.end_date
+) /* selected no-insurance encounters and joined with according time period from payer_transitions table */
+
+SELECT c.patient, c.name, p.name, c.start AS encounter, c.start_date AS insurance_start, c.end_date AS insurance_end
+FROM combined AS c
+INNER JOIN 
+payers AS p
+ON c.payer=p.id
+WHERE p.name != 'NO_INSURANCE' /* filtered cases where the payer name was not no_insurance, meaning that the patient had an insurance at the time of encounter */
+
+```
+
+In the following analysis, there seems to be 27 cases of 'surprise
+billing'. The encounter 'stop' date and time were not identical with
+either payer_transitions start or end date. However, the encounter
+'stop' date and time were substantially close (within 24 hours) from the
+payer_transitions start date and time. These results indicate that
+further analysis may be necessary for these inconsistency.
+
+```{sql connection=con}
+
+WITH tableone AS
+(
+SELECT p.name AS noinsurance, e.patient AS patient, e.stop AS encounterdate, e.payer AS payerid
+FROM encounters AS e
+INNER JOIN
+payers AS p
+ON p.id=e.payer
+WHERE p.name='NO_INSURANCE'
+), 
+tabletwo AS
+(
+SELECT t.noinsurance, t.patient, t.encounterdate, pt.start_date, pt.end_date, pt.payer
+FROM tableone AS t
+INNER JOIN
+payer_transitions AS pt
+ON t.patient=pt.patient
+WHERE t.encounterdate BETWEEN pt.start_date AND pt.end_date
+)
+SELECT tt.patient, tt.noinsurance, p.name, tt.encounterdate, tt.start_date AS insurance_start, tt.end_date AS insurance_end
+FROM tabletwo AS tt
+INNER JOIN 
+payers AS p
+ON tt.payer=p.id
+WHERE p.name != 'NO_INSURANCE'
+```
+
+# Reference
+
+Raghupathi, W., & Raghupathi, V. (2018). An Empirical Study of Chronic
+Diseases in the United States: A Visual Analytics Approach.
+International journal of environmental research and public health,
+15(3), 431. https://doi.org/10.3390/ijerph15030431
