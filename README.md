@@ -46,4 +46,3 @@ This repository contains an assignment or report on various healthcare-related t
 
 ---
 
-Feel free to customize this README according to your specific needs and preferences! Let me know if you need further assistance.
